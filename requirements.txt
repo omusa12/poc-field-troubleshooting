@@ -1,0 +1,35 @@
+# Core LangChain - split packages required as of 0.2+
+langchain==0.3.14
+langchain-core==0.3.34
+langchain-community==0.3.14
+langchain-anthropic==0.3.7
+langchain-huggingface==0.1.2
+
+# LLM
+anthropic==0.45.0
+
+# Embeddings (free, local, no API key)
+sentence-transformers==3.3.1
+
+# Vector store (CPU-only for Streamlit Cloud compatibility)
+faiss-cpu==1.9.0
+
+# PDF loading
+pypdf==5.1.0
+
+# Web scraping
+requests==2.32.3
+beautifulsoup4==4.12.3
+markdownify==0.14.1
+lxml==5.3.0
+
+# Frontend
+streamlit==1.41.1
+
+# Utilities
+python-dotenv==1.0.1
+tqdm==4.67.1
+
+# Optional: Voyage AI embeddings (higher quality, requires re-ingestion with USE_VOYAGE=True)
+# voyageai==0.3.2
+# langchain-voyageai==0.1.0
