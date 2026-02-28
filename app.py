@@ -16,6 +16,7 @@ Requires .streamlit/secrets.toml with:
 import sys
 from pathlib import Path
 
+import os
 import re
 
 import anthropic
@@ -142,6 +143,29 @@ def get_chunk_count() -> int:
         return 0
 
 
+def resolve_secret(name: str) -> str:
+    """
+    Resolve secret from Streamlit secrets (top-level or sectioned) or env vars.
+    """
+    try:
+        value = str(st.secrets.get(name, "")).strip()
+        if value:
+            return value
+    except Exception:
+        pass
+
+    try:
+        for _, section in st.secrets.items():
+            if hasattr(section, "get"):
+                value = str(section.get(name, "")).strip()
+                if value:
+                    return value
+    except Exception:
+        pass
+
+    return os.environ.get(name, "").strip()
+
+
 def assess_retrieval_quality(
     sources: list[dict],
     distance_strategy: str,
@@ -196,20 +220,26 @@ def render_auth_gate() -> None:
     _, col, _ = st.columns([1, 2, 1])
     with col:
         st.subheader("Access Required")
+        access_code = resolve_secret("ACCESS_CODE")
+        if not access_code:
+            st.error(
+                "Configuration error: ACCESS_CODE is missing.\n\n"
+                "For Streamlit Community Cloud, open App Settings -> Secrets and add:\n"
+                "```\nACCESS_CODE = \"your-demo-code\"\n```"
+            )
+            return
+
         password = st.text_input(
             "Enter access code:",
             type="password",
             placeholder="Enter your demo access code",
         )
         if st.button("Sign In", type="primary", use_container_width=True):
-            try:
-                if password == st.secrets["ACCESS_CODE"]:
-                    st.session_state.authenticated = True
-                    st.rerun()
-                else:
-                    st.error("Invalid access code. Contact your Hitron representative.")
-            except KeyError:
-                st.error("Configuration error: ACCESS_CODE not set in secrets.toml")
+            if password == access_code:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Invalid access code. Contact your Hitron representative.")
 
 
 # ─── RAG retrieval ─────────────────────────────────────────────────────────────
@@ -294,7 +324,14 @@ def stream_claude_response(
     LangChain ConversationalRetrievalChain streaming is fragile in Streamlit;
     the Anthropic SDK's text_stream iterator works cleanly with st.write_stream.
     """
-    client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+    api_key = resolve_secret("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY is missing. Set it in Streamlit Community Cloud "
+            "App Settings -> Secrets."
+        )
+
+    client = anthropic.Anthropic(api_key=api_key)
 
     if context:
         user_content = (
@@ -591,15 +628,19 @@ def render_chat(vectorstore, system_prompt: str) -> None:
 
         response_placeholder = st.empty()
         response_chunks = []
-        for chunk in stream_claude_response(
-            user_query=query,
-            context=context,
-            chat_history=st.session_state.messages[:-1],
-            system_prompt=system_prompt,
-            retrieval_quality=retrieval_quality,
-        ):
-            response_chunks.append(chunk)
-            response_placeholder.markdown(_clean_citations("".join(response_chunks)))
+        try:
+            for chunk in stream_claude_response(
+                user_query=query,
+                context=context,
+                chat_history=st.session_state.messages[:-1],
+                system_prompt=system_prompt,
+                retrieval_quality=retrieval_quality,
+            ):
+                response_chunks.append(chunk)
+                response_placeholder.markdown(_clean_citations("".join(response_chunks)))
+        except RuntimeError as exc:
+            st.error(str(exc))
+            return
 
         response_text = "".join(response_chunks)
         response_placeholder.empty()
